@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BayFlow - Choose a Google Sheet</title>
+  <style>
+    :root{color-scheme:light}
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;font-family:Segoe UI,Roboto,Arial,sans-serif;background:#f5f7fb;color:#172338}
+    body{display:flex;align-items:center;justify-content:center}
+    .card{width:min(920px,94vw);height:min(680px,90vh);display:flex;flex-direction:column;background:#fff;border:1px solid #dfe5ee;border-radius:18px;box-shadow:0 20px 60px rgba(20,32,50,.16);overflow:hidden}
+    .head{padding:18px 22px;border-bottom:1px solid #e9edf3;background:linear-gradient(180deg,#fff,#fbfcfe)}
+    .title{font-size:20px;font-weight:700;letter-spacing:-.2px}
+    .sub{margin-top:5px;font-size:12px;color:#64748b}
+    .body{position:relative;flex:1;min-height:0;padding:14px 18px}
+    #state{display:flex;align-items:center;justify-content:center;height:100%;padding:16px;text-align:center;font-size:14px;color:#52637a}
+    #state.ok{color:#167a46}
+    #state.err{color:#a52626}
+    .mini{padding:11px 18px;border-top:1px solid #edf1f5;font-size:11px;color:#7a8798;background:#fbfcfe}
+    .spinner{width:20px;height:20px;border:3px solid #d9e5ff;border-top-color:#1a73e8;border-radius:50%;animation:spin .8s linear infinite;margin-right:9px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+  <script async defer src="https://apis.google.com/js/api.js"></script>
+</head>
+<body>
+  <section class="card" aria-label="BayFlow Google Sheet Picker">
+    <header class="head">
+      <div class="title">Choose a spreadsheet for BayFlow</div>
+      <div class="sub">Select the Google Sheet BayFlow should use for your eBay order records.</div>
+    </header>
+    <main class="body">
+      <div id="state"><span class="spinner"></span><span>Loading Google Picker…</span></div>
+    </main>
+    <footer class="mini">Only the spreadsheet you select is returned to BayFlow. Your OAuth access token is received through the URL fragment and is not sent to the web server.</footer>
+  </section>
+
+  <script>
+    const PROJECT_NUMBER = "74619253589";
+    // Replace this placeholder locally with your restricted Google Picker API key.
+    const API_KEY = "AIzaSyA6EOGC8nXC9sb9Z-Lqsw6kfRD4mt_FAi4";
+    const state = document.getElementById("state");
+
+    const params = new URLSearchParams(window.location.search);
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
+
+    function setState(text, kind = "") {
+      state.className = kind;
+      state.innerHTML = "";
+      const span = document.createElement("span");
+      span.textContent = text;
+      state.appendChild(span);
+    }
+
+    function setLoading(text) {
+      state.className = "";
+      state.innerHTML = "";
+      const spinner = document.createElement("span");
+      spinner.className = "spinner";
+      const label = document.createElement("span");
+      label.textContent = text;
+      state.append(spinner, label);
+    }
+
+    function sendSelection(selection) {
+      window.parent.postMessage(selection, "*");
+    }
+
+    function openPicker() {
+      if (!token) {
+        setState("Google authorization was not provided. Please reconnect BayFlow.", "err");
+        return;
+      }
+      if (API_KEY === "PASTE_API_KEY_HERE") {
+        setState("Picker is not configured yet. Add the restricted Google API key to picker.html.", "err");
+        return;
+      }
+      if (!window.google || !google.picker) {
+        setState("Google Picker could not be loaded. Please refresh and try again.", "err");
+        return;
+      }
+
+      try {
+        const view = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+          .setIncludeFolders(false);
+
+        const picker = new google.picker.PickerBuilder()
+          .setDeveloperKey(API_KEY)
+          .setOAuthToken(token)
+          .setAppId(PROJECT_NUMBER)
+          .addView(view)
+          .setTitle("Choose a spreadsheet for BayFlow")
+          .setCallback((data) => {
+            if (data.action === google.picker.Action.PICKED) {
+              const doc = data.docs && data.docs[0];
+              if (!doc) {
+                setState("No spreadsheet was selected.", "err");
+                return;
+              }
+
+              sendSelection({
+                type: "BAYFLOW_SHEET_SELECTED",
+                id: doc[google.picker.Document.ID] || "",
+                name: doc[google.picker.Document.NAME] || "Google Sheet",
+                url: doc[google.picker.Document.URL] || ""
+              });
+              setState("Spreadsheet selected. Finishing connection…", "ok");
+            } else if (data.action === google.picker.Action.CANCEL) {
+              sendSelection({type: "BAYFLOW_SHEET_PICKER_CANCELLED"});
+              setState("Selection cancelled.");
+            }
+          })
+          .build();
+
+        picker.setVisible(true);
+        setState("Choose a spreadsheet…");
+      } catch (error) {
+        setState(error && error.message ? error.message : "Unable to open Google Picker.", "err");
+      }
+    }
+
+    function loadPicker() {
+      if (!window.gapi) {
+        setTimeout(loadPicker, 150);
+        return;
+      }
+      setLoading("Loading Google Picker…");
+      gapi.load("picker", {callback: openPicker});
+    }
+
+    if (!PROJECT_NUMBER || PROJECT_NUMBER.length < 6) {
+      setState("Picker project configuration is incomplete.", "err");
+    } else {
+      loadPicker();
+    }
+  </script>
+</body>
+</html>
